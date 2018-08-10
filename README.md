@@ -1,10 +1,10 @@
 # Methods_of_MNIST
-##PCA 
+PCA 
 
-##CNN
+CNN
 
-##FGSM and TGSM 
+FGSM and TGSM 
 
-##CycleGAN and SSGAN 
+CycleGAN and SSGAN 
 
 #Datasets: MNIST and SVHN.
