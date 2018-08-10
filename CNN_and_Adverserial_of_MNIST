@@ -1,0 +1,297 @@
+from __future__ import print_function
+from tqdm import tqdm
+from tensorflow.examples.tutorials.mnist import input_data
+import tensorflow as tf
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+sns.set_style('white')  # darkgrid, whitegrid, dark, white, ticks
+colors_list = sns.color_palette("Paired", 10)
+np.random.seed(100)     # Will be used in initialization
+tf.set_random_seed(100)
+tf.test.gpu_device_name()
+
+
+# Load MNIST training dataset and testing dataset
+mnist = input_data.read_data_sets('/tmp/tensorflow/mnist/input_data', one_hot=True)
+
+# Build graph
+def build_graph():
+    """build the same graph as previous dumped model
+
+    Args:
+      None
+
+    Returns:
+      sess          : tf.InteractiveSession()
+      x             : tf.placeholder()
+      y_            : tf.placeholder()
+      y_pred,       : tf.Variable()
+      keep_prob,    : tf.placeholder()
+      cross_entropy : tf.Variable()
+
+    Example:
+      >>> build_graph()
+    """
+    x = tf.placeholder(tf.float32, shape=[None, 784], name='x')  # 28x28 = 784
+    y_ = tf.placeholder(tf.float32, shape=[None, 10], name='y_') # Out_classes = 10(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+
+    def weight_variable(shape):
+        """Create a weight variable with appropriate initialization
+        Returns:
+            initialize the weights
+        """
+        initial = tf.truncated_normal(shape, stddev=0.1)
+        return tf.Variable(initial)
+
+    def bias_variable(shape):
+        """Create a bias variable with appropriate initialization."""
+        initial = tf.constant(0.1, shape=shape)
+        return tf.Variable(initial)
+
+    def conv2d(x, W):
+        """simple conv2d layer"""
+        return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+
+    def max_pool_2x2(x):
+        """a simple 2x2 max pool layer"""
+        return tf.nn.max_pool(x, ksize=[1, 2, 2, 1],
+                              strides=[1, 2, 2, 1], padding='SAME')
+
+    # First conv layer with a pool layer
+    W_conv1 = weight_variable([5, 5, 1, 32])
+    b_conv1 = bias_variable([32])
+
+    x_image = tf.reshape(x, [-1, 28, 28, 1])
+    h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
+    h_pool1 = max_pool_2x2(h_conv1)
+
+    # Second conv layer with a pool layer
+    W_conv2 = weight_variable([5, 5, 32, 64])
+    b_conv2 = bias_variable([64])
+
+    h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
+    h_pool2 = max_pool_2x2(h_conv2)
+
+    # First Full-connect layer
+    W_fc1 = weight_variable([7 * 7 * 64, 1024])
+    b_fc1 = bias_variable([1024])
+
+    h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
+    h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
+
+    keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+    h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)  # Protect from overfitting
+
+    # Second Full-connect layer
+    W_fc2 = weight_variable([1024, 10])
+    b_fc2 = bias_variable([10])
+
+    # output layer
+    y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
+    y_pred = tf.nn.softmax(y_conv, name='y_pred')
+
+    cross_entropy = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=y_conv), name='cross_entropy')
+
+    sess = tf.InteractiveSession()
+    return sess, x, y_, y_pred, keep_prob, cross_entropy
+# Training and testing the model
+train_images = mnist.train.images.reshape((55000, 28, 28, 1))
+train_labels = mnist.train.labels
+test_images = mnist.test.images.reshape((10000, 28, 28, 1))
+test_labels = mnist.test.labels
+
+valid_images = mnist.validation.images.reshape((5000, 28, 28, 1))
+valid_labels = mnist.validation.labels
+
+sess, x, y_, y_pred, keep_prob, cross_entropy = build_graph()
+
+train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+
+correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y_, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+sess.run(tf.global_variables_initializer())
+pbar = tqdm(range(2200))
+pbar.set_description('Training...')
+
+# Initialize train_accuracies and train_losses
+train_accuracies = []
+train_losses = []
+
+# Update params
+for i in pbar:
+    batch = mnist.train.next_batch(50)
+    if i % 50 == 0:
+        train_accuracy = accuracy.eval(feed_dict={x: batch[0], y_: batch[1], keep_prob: 1.0})
+        train_accuracies.append(train_accuracy)
+
+        train_loss = (cross_entropy.eval(feed_dict={x: batch[0], y_: batch[1], keep_prob: 1.0}))
+        train_losses.append(train_loss)
+    train_step.run(feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5})
+
+sns.set_style('whitegrid')
+accuracy_history = np.array(train_accuracies)  # Convert to a numpy's array
+loss_history = np.array(train_losses)
+
+
+plt.figure()
+plt.title('Loss')
+plt.plot(loss_history, color=colors_list[0])
+# plt.xlabel('')
+# plt.ylabel('')
+plt.show()
+
+plt.figure()
+plt.title('Accuracy')
+plt.plot(accuracy_history, color=colors_list[1])
+# plt.xlabel('')
+# plt.ylabel('')
+plt.show()
+# Test accuracy
+print("Test accuracy on test images: %g" % accuracy.eval(feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
+# Save model
+model_path = '/tmp/tensorflow/MNIST.ckpt'
+save_path = tf.train.Saver().save(sess, model_path)
+print("Model saved in file: ", save_path)
+del sess, x, y_, y_pred, keep_prob, cross_entropy
+
+
+# Load Model
+graph = tf.Graph()
+sess = tf.InteractiveSession(graph=graph)
+
+tf.train.import_meta_graph(model_path + '.meta')
+
+saver = tf.train.Saver()
+saver.restore(sess, model_path)
+graph = tf.get_default_graph()
+
+print(graph)
+
+# Computing using the model
+x = graph.get_tensor_by_name('x:0')
+y_ = graph.get_tensor_by_name('y_:0')
+y_pred = graph.get_tensor_by_name('y_pred:0')
+keep_prob = graph.get_tensor_by_name('keep_prob:0')
+cross_entropy = graph.get_tensor_by_name('cross_entropy:0')
+
+correct_prediction = tf.equal(tf.argmax(y_pred, 1), tf.argmax(y_, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+print("Test accuracy on test images: %g" % accuracy.eval(feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
+
+
+# Load Some number 2
+index_mask = np.where(mnist.test.labels[:, 2])[0]
+subset_mask = np.random.choice(index_mask, 5)
+origin_images = mnist.test.images[subset_mask]
+origin_labels = mnist.test.labels[subset_mask]
+
+prediction = y_pred.eval(feed_dict={x: origin_images, y_: origin_labels, keep_prob: 1.0})
+print('Predictions: {}'.format(np.argmax(prediction,1)))
+
+
+
+plt.figure()
+for i in range(5):
+    print('Correct Label:', np.argmax(origin_labels[i]))
+    print('Predict Label:', np.argmax(prediction[i]))
+    print('Confidence:', np.max(prediction[i]))
+    plt.axis('off')
+    plt.imshow(origin_images[i].reshape(28,28), interpolation=None, cmap=plt.cm.gray)
+    plt.show()
+
+
+# Add Random Noise
+noisy_imgs = origin_images.copy()
+noisy_imgs += np.random.normal(size=noisy_imgs.size, scale=0.1).reshape(noisy_imgs.shape)
+
+prediction_n_val = y_pred.eval(feed_dict={x: noisy_imgs, keep_prob: 1.0}, session=sess)
+print("predictions", np.argmax(prediction_n_val,1))
+
+sns.set_style('white')
+for i in range(5):
+    fig = plt.figure(figsize=(9, 4))
+
+    start_img = origin_images[i, :]
+    ax1 = fig.add_subplot(1, 3, 1)
+    ax1.axis('off')
+    ax1.imshow(start_img.reshape([28, 28]), interpolation=None, cmap=plt.cm.gray)
+    ax1.title.set_text('Confidence for 2: ' + '{:.4f}'.format(prediction[i][2])
+                       + '\nConfidence for 6: ' + '{:.4f}'.format(prediction[i][6]))
+
+    noisy_img = noisy_imgs[i, :]
+    ax2 = fig.add_subplot(1, 3, 2)
+    ax2.axis('off')
+    ax2.imshow((noisy_img - start_img).reshape([28, 28]), interpolation=None, cmap=plt.cm.gray, vmin=0, vmax=0.5)
+    ax2.title.set_text('Delta')
+
+    ax3 = fig.add_subplot(1, 3, 3)
+    ax3.axis('off')
+    ax3.imshow((noisy_img).reshape([28, 28]), interpolation=None, cmap=plt.cm.gray)
+    ax3.title.set_text('Confidence for 2: ' + '{:.4f}'.format(prediction_n_val[i][2])
+                       + '\nConfidence for 6: ' + '{:.4f}'.format(prediction_n_val[i][6]))
+
+    plt.show()
+
+    print("Difference Measure:", np.sum((noisy_img - start_img) ** 2))
+
+#------------------------------------------------------------------------------------------------#
+# Create Adverserial Example
+#------------------------------------------------------------------------------------------------#
+# Make 2 adverserial 6
+target_number = 6
+target_labels = np.zeros(origin_labels.shape)
+target_labels[:, target_number] = 1
+target_labels
+
+img_gradient = tf.gradients(cross_entropy, x)[0]
+
+
+eps = 0.002
+iter_num = 65
+adversarial_imgs = origin_images.copy()
+with sess.as_default():
+    for i in range(0, iter_num):
+        gradient = img_gradient.eval(feed_dict={x: adversarial_imgs, y_: target_labels, keep_prob: 1.0})
+        adversarial_imgs -= eps * np.sign(gradient)
+        prediction_ad = tf.argmax(y_pred,1)
+        prediction_ad_val = prediction_ad.eval(feed_dict={x: adversarial_imgs, keep_prob: 1.0}, session=sess)
+        accuracy = np.mean(np.equal(prediction_ad_val, np.argmax(origin_labels, 1)))
+        print("Iteration {:3}: predictions: {} accuracy: {}".format(i, prediction_ad_val, accuracy))
+
+
+prediction_ad_val = y_pred.eval(feed_dict={x: adversarial_imgs, keep_prob: 1.0}, session=sess)
+print("predictions", np.argmax(prediction_ad_val,1))
+# Out: predictions [6 6 6 6 6]
+
+
+sns.set_style('white')
+for i in range(5):
+    fig = plt.figure(figsize=(9, 4))
+
+    start_img = origin_images[i, :]
+    ax1 = fig.add_subplot(1, 3, 1)
+    ax1.axis('off')
+    ax1.imshow(start_img.reshape([28, 28]), interpolation=None, cmap=plt.cm.gray)
+    ax1.title.set_text('Confidence for 2: ' + '{:.4f}'.format(prediction[i][2])
+                       + '\nConfidence for 6: ' + '{:.4f}'.format(prediction[i][6]))
+
+    adversarial_img = adversarial_imgs[i, :]
+    ax2 = fig.add_subplot(1, 3, 2)
+    ax2.axis('off')
+    ax2.imshow((adversarial_img - start_img).reshape([28, 28]), interpolation=None, cmap=plt.cm.gray, vmin=0, vmax=0.5)
+    ax2.title.set_text('Delta')
+
+    ax3 = fig.add_subplot(1, 3, 3)
+    ax3.axis('off')
+    ax3.imshow((adversarial_img).reshape([28, 28]), interpolation=None, cmap=plt.cm.gray)
+    ax3.title.set_text('Confidence for 2: ' + '{:.4f}'.format(prediction_ad_val[i][2])
+                       + '\nConfidence for 6: ' + '{:.4f}'.format(prediction_ad_val[i][6]))
+
+    plt.show()
+
+    print("Difference Measure:", np.sum((adversarial_img - start_img) ** 2))
+
+
